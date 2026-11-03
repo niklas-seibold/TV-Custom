@@ -9,8 +9,8 @@ android {
         minSdk 22
         // Fire OS 7 = Android 9. Targeting 28 keeps boot/background launch behaviour simple.
         targetSdk 28
-        versionCode 7
-        versionName '1.6'
+        versionCode 9
+        versionName '1.8'
     }
 
     signingConfigs {
