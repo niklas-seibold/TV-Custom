@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
             {"Netflix", "com.netflix.ninja"},
             {"Prime Video", "com.amazon.firebat", "com.amazon.avod", "com.amazon.avod.thirdpartyclient"},
             {"Apple TV", "com.apple.atve.amazon.appletv"},
+            {"Zwift", "com.zwift.zwiftgame"},
     };
     private static final String AIRSCREEN = "com.ionitech.airscreen";
 
@@ -85,7 +86,7 @@ public class MainActivity extends Activity {
         nightBtn.setOnClickListener(v -> {
             night = !night;
             getPreferences(MODE_PRIVATE).edit().putBoolean("night", night).apply();
-            if (night) focusIndex = 4; // PS5
+            if (night) focusIndex = APPS.length; // PS5 tile
             buildRow();
             applyNight(true);
         });
@@ -374,7 +375,8 @@ public class MainActivity extends Activity {
         float widthDp = m.widthPixels / density;
         float gapDp = 16;
         // 6 wide tiles + 1 square settings tile (width = tile height) must fit in ~92% of the screen.
-        float tileWdp = Math.min(170f, (widthDp * 0.92f - 48 - gapDp * 6) / (6f + 9f / 16f));
+        int wide = APPS.length + 2; // apps + PS5 + AirPlay
+        float tileWdp = Math.min(170f, (widthDp * 0.94f - 48 - gapDp * wide) / (wide + 9f / 16f));
         int w = dp(tileWdp), h = dp(tileWdp * 9f / 16f), gap = dp(gapDp);
 
         final PackageManager pm = getPackageManager();
@@ -533,6 +535,13 @@ public class MainActivity extends Activity {
     }
 
     private void openApp(String label, String pkg, String storePkg) {
+        if (pkg == null && "Zwift".equals(label)) {
+            new AlertDialog.Builder(this).setTitle("Zwift")
+                    .setMessage("Zwift isn't available for Fire TV yet. Options: mirror Zwift from your iPhone with the AirPlay tile, "
+                            + "or use an Apple TV box on another HDMI port. If Zwift gets installed on this TV, this tile opens it.")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
         if (pkg != null) {
             PackageManager pm = getPackageManager();
             Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
