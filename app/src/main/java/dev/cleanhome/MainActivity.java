@@ -599,11 +599,31 @@ public class MainActivity extends Activity {
         if (pick != null) {
             Intent v = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(pick.getId()))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            pickLiveTv(v);
             Guard.allowTarget(this, v);
             Guard.graceFor(5000);
             if (safeStart(v, null)) return;
         }
         showInputDiagnostics(all);
+    }
+
+    /** Several apps can show an HDMI input (e.g. Freeview, Live TV): always use the TV's own Live TV. */
+    private void pickLiveTv(Intent v) {
+        try {
+            List<android.content.pm.ResolveInfo> list = getPackageManager().queryIntentActivities(v, 0);
+            android.content.pm.ResolveInfo best = null;
+            for (android.content.pm.ResolveInfo ri : list) {
+                String label = String.valueOf(ri.loadLabel(getPackageManager())).toLowerCase();
+                if (label.contains("live tv") || label.contains("livetv")) { best = ri; break; }
+            }
+            if (best == null) for (android.content.pm.ResolveInfo ri : list) {
+                if (ri.activityInfo.packageName.startsWith("com.amazon")
+                        || ri.activityInfo.packageName.contains("tcl")
+                        || ri.activityInfo.packageName.contains("mediatek")) { best = ri; break; }
+            }
+            if (best != null) v.setClassName(best.activityInfo.packageName, best.activityInfo.name);
+        } catch (Exception ignored) {
+        }
     }
 
     /** Shown only if HDMI switching fails: a photo of this tells us how to fix it. */

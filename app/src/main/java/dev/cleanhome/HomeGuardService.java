@@ -3,6 +3,7 @@ package dev.cleanhome;
 import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 /**
@@ -47,6 +48,23 @@ public class HomeGuardService extends AccessibilityService {
         } catch (Exception ex) {
             Log.w("CleanHome", "redirect failed", ex);
         }
+    }
+
+    /** Catch the Home key before Fire OS handles it: instant, and avoids Android's app-switch delay. */
+    @Override
+    protected boolean onKeyEvent(KeyEvent e) {
+        if (e.getKeyCode() != KeyEvent.KEYCODE_HOME) return false;
+        if (System.currentTimeMillis() < Guard.pausedUntil) return false;
+        if (e.getAction() == KeyEvent.ACTION_UP) {
+            Log.i("CleanHome", "home key intercepted");
+            try {
+                startActivity(new Intent(this, MainActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+            } catch (Exception ex) {
+                Log.w("CleanHome", "home start failed", ex);
+            }
+        }
+        return true;
     }
 
     @Override
