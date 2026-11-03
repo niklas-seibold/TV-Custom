@@ -356,6 +356,7 @@ public class MainActivity extends Activity {
         if (pick != null) {
             Intent v = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(pick.getId()))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Guard.allowTarget(this, v);
             Guard.graceFor(5000);
             if (safeStart(v, null)) return;
         }

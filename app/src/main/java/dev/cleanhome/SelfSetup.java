@@ -35,8 +35,9 @@ final class SelfSetup {
     private SelfSetup() {}
 
     static boolean guardEnabled(Context c) {
+        if (HomeGuardService.running) return true;
         String v = Settings.Secure.getString(c.getContentResolver(), "enabled_accessibility_services");
-        return v != null && v.contains(SERVICE);
+        return v != null && (v.contains(SERVICE) || v.contains("dev.cleanhome/.HomeGuardService"));
     }
 
     /** Blocking; call from a background thread. Returns null on success, else an error message. */

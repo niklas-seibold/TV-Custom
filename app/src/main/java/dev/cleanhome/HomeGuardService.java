@@ -2,43 +2,50 @@ package dev.cleanhome;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
+import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 
-import java.util.Set;
-
 /**
- * Fire OS always sends the Home button to Amazon's launcher. When that launcher's
- * home screen appears, bring CleanHome back to the front.
+ * Fire OS always sends the Home button to Amazon's launcher. Whenever a window of
+ * that launcher appears (except screens we opened on purpose, e.g. HDMI), bring
+ * CleanHome back to the front.
  */
 public class HomeGuardService extends AccessibilityService {
-    private Set<String> homeClasses;
+    static volatile boolean running = false;
     private long lastRedirect;
 
     @Override
     protected void onServiceConnected() {
-        homeClasses = Guard.amazonHomeClasses(this);
+        running = true;
+        Log.i("CleanHome", "guard connected");
+    }
+
+    @Override
+    public void onDestroy() {
+        running = false;
+        super.onDestroy();
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {
         if (e == null || e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
-        if (e.getPackageName() == null || !Guard.AMAZON_HOME_PKG.equals(e.getPackageName().toString())) return;
+        String pkg = e.getPackageName() == null ? "" : e.getPackageName().toString();
+        String cls = e.getClassName() == null ? "" : e.getClassName().toString();
+        Log.i("CleanHome", "window " + pkg + "/" + cls);
+        if (!Guard.AMAZON_HOME_PKG.equals(pkg)) return;
 
         long now = System.currentTimeMillis();
         if (now < Guard.pausedUntil || now < Guard.graceUntil) return;
-
-        if (homeClasses == null || homeClasses.isEmpty()) homeClasses = Guard.amazonHomeClasses(this);
-        String cls = e.getClassName() == null ? "" : e.getClassName().toString();
-        // If we know the home activity, only react to it (so Amazon popups/inputs still work).
-        if (!homeClasses.isEmpty() && !homeClasses.contains(cls)) return;
+        if (Guard.allowed.contains(cls)) return;
 
         if (now - lastRedirect < 400) return;
         lastRedirect = now;
-        Intent i = new Intent(this, MainActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        Log.i("CleanHome", "redirecting from " + cls);
         try {
-            startActivity(i);
-        } catch (Exception ignored) {
+            startActivity(new Intent(this, MainActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+        } catch (Exception ex) {
+            Log.w("CleanHome", "redirect failed", ex);
         }
     }
 

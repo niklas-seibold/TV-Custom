@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ResolveInfo;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -17,7 +18,21 @@ final class Guard {
     /** Short grace window after we open a system screen (HDMI, Settings) that may live in the Amazon package. */
     static volatile long graceUntil = 0;
 
+    /** Amazon-launcher screens we open on purpose (e.g. the HDMI viewer) — never redirected. */
+    static final Set<String> allowed = Collections.synchronizedSet(new HashSet<String>());
+
     private Guard() {}
+
+    /** Remember the activity that will handle this intent if it lives in Amazon's launcher. */
+    static void allowTarget(Context c, Intent i) {
+        try {
+            ResolveInfo ri = c.getPackageManager().resolveActivity(i, 0);
+            if (ri != null && ri.activityInfo != null && AMAZON_HOME_PKG.equals(ri.activityInfo.packageName)) {
+                allowed.add(ri.activityInfo.name);
+            }
+        } catch (Exception ignored) {
+        }
+    }
 
     static Intent amazonHomeIntent() {
         return new Intent(Intent.ACTION_MAIN)
