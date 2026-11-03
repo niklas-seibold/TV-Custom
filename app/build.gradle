@@ -1,0 +1,36 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'dev.cleanhome'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'dev.cleanhome'
+        minSdk 22
+        // Fire OS 7 = Android 9. Targeting 28 keeps boot/background launch behaviour simple.
+        targetSdk 28
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        // Fixed key committed to the repo so every CI build can update the installed app.
+        fixed {
+            storeFile file('cleanhome.keystore')
+            storePassword 'cleanhome'
+            keyAlias 'cleanhome'
+            keyPassword 'cleanhome'
+        }
+    }
+
+    buildTypes {
+        debug { signingConfig signingConfigs.fixed }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint { abortOnError false; checkReleaseBuilds false }
+}
