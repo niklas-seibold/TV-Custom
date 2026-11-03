@@ -1,5 +1,9 @@
 package dev.cleanhome;
 
+import android.animation.Animator;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -12,7 +16,9 @@ import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.animation.OvershootInterpolator;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
@@ -50,12 +56,128 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         row = findViewById(R.id.row);
         density = getResources().getDisplayMetrics().density;
+        root = findViewById(R.id.root);
+        gameOn = findViewById(R.id.gameOn);
+        nightBtn = findViewById(R.id.nightBtn);
+        try {
+            night = getPreferences(MODE_PRIVATE).getBoolean("night", false);
+        } catch (Exception ignored) {
+        }
+        nightBtn.setOnClickListener(v -> {
+            night = !night;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("night", night).apply();
+            if (night) focusIndex = 4; // PS5
+            buildRow();
+            applyNight(true);
+        });
+    }
+
+    // ---------------------------------------------------------------- boys night mode
+
+    private boolean night = false;
+    private View root;
+    private TextView gameOn, nightBtn;
+    private final List<Animator> nightAnims = new ArrayList<>();
+
+    private void stopNightAnims() {
+        for (Animator a : nightAnims) a.cancel();
+        nightAnims.clear();
+    }
+
+    private void applyNight(boolean animate) {
+        stopNightAnims();
+        root.setBackgroundResource(night ? R.drawable.bg_night : R.drawable.bg_gradient);
+        nightBtn.setText(night ? "\u25CF  Boys Night ON" : "Boys Night");
+        nightBtn.setTextColor(night ? 0xFFFF4A4A : Color.WHITE);
+        nightBtn.setShadowLayer(night ? 18 : 0, 0, 0, 0xFFFF1A1A);
+
+        if (!night) {
+            gameOn.setVisibility(View.GONE);
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View c = row.getChildAt(i);
+                c.setScaleX(1f);
+                c.setScaleY(1f);
+                c.setTranslationY(0);
+                c.setAlpha(1f);
+            }
+            return;
+        }
+
+        gameOn.setVisibility(View.VISIBLE);
+        // Neon pulse that runs forever (glow radius + brightness breathe).
+        ValueAnimator pulse = ValueAnimator.ofFloat(0f, 1f);
+        pulse.setDuration(1800);
+        pulse.setRepeatMode(ValueAnimator.REVERSE);
+        pulse.setRepeatCount(ValueAnimator.INFINITE);
+        pulse.addUpdateListener(a -> {
+            float f = (float) a.getAnimatedValue();
+            gameOn.setShadowLayer(25 + 35 * f, 0, 0, 0xFFFF1A1A);
+            gameOn.setAlpha(0.45f + 0.35f * f);
+        });
+
+        if (animate) {
+            // Slam in, then a neon-tube flicker, then pulse.
+            gameOn.setScaleX(2.4f);
+            gameOn.setScaleY(2.4f);
+            gameOn.setAlpha(0f);
+            AnimatorSet slam = new AnimatorSet();
+            slam.playTogether(
+                    ObjectAnimator.ofFloat(gameOn, "scaleX", 2.4f, 1f),
+                    ObjectAnimator.ofFloat(gameOn, "scaleY", 2.4f, 1f),
+                    ObjectAnimator.ofFloat(gameOn, "alpha", 0f, 1f));
+            slam.setInterpolator(new OvershootInterpolator(1.6f));
+            slam.setDuration(520);
+            ObjectAnimator flicker = ObjectAnimator.ofFloat(gameOn, "alpha", 1f, 0.15f, 1f, 0.3f, 0.9f, 0.2f, 1f, 0.6f);
+            flicker.setDuration(750);
+            AnimatorSet seq = new AnimatorSet();
+            seq.playSequentially(slam, flicker, pulse);
+            nightAnims.add(seq);
+            seq.start();
+
+            // Tiles drop in one after another with a bounce.
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View c = row.getChildAt(i);
+                c.setTranslationY(dp(60));
+                c.setAlpha(0f);
+                c.animate().translationY(0).alpha(1f).setStartDelay(250 + i * 70L).setDuration(450)
+                        .setInterpolator(new OvershootInterpolator(2f)).start();
+            }
+        } else {
+            gameOn.setScaleX(1f);
+            gameOn.setScaleY(1f);
+            nightAnims.add(pulse);
+            pulse.start();
+        }
+
+        // Subtle staggered "breathing" on every tile.
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View c = row.getChildAt(i);
+            AnimatorSet breathe = new AnimatorSet();
+            ObjectAnimator sx = ObjectAnimator.ofFloat(c, "scaleX", 1f, 1.035f);
+            ObjectAnimator sy = ObjectAnimator.ofFloat(c, "scaleY", 1f, 1.035f);
+            for (ObjectAnimator o : new ObjectAnimator[]{sx, sy}) {
+                o.setRepeatMode(ValueAnimator.REVERSE);
+                o.setRepeatCount(ValueAnimator.INFINITE);
+                o.setDuration(1400);
+            }
+            breathe.playTogether(sx, sy);
+            breathe.setStartDelay((animate ? 900 : 0) + i * 160L);
+            nightAnims.add(breathe);
+            breathe.start();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        stopNightAnims();
+        super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
+        applyNight(false);
         if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
     }
 
@@ -132,6 +254,7 @@ public class MainActivity extends Activity {
     }
 
     private void buildRow() {
+        stopNightAnims();
         row.removeAllViews();
 
         DisplayMetrics m = getResources().getDisplayMetrics();
@@ -215,7 +338,13 @@ public class MainActivity extends Activity {
 
         final FrameLayout tile = new FrameLayout(this);
         tile.setBackgroundResource(R.drawable.tile_bg);
-        tile.setForeground(getResources().getDrawable(R.drawable.tile_ring, getTheme()));
+        tile.setForeground(getResources().getDrawable(night ? R.drawable.tile_ring_night : R.drawable.tile_ring, getTheme()));
+        if (night && Build.VERSION.SDK_INT >= 28) {
+            // Red neon glow via coloured elevation shadow.
+            tile.setOutlineSpotShadowColor(0xFFFF1A1A);
+            tile.setOutlineAmbientShadowColor(0xFFFF1A1A);
+            tile.setElevation(dp(10));
+        }
         tile.setClipToOutline(true);
         tile.setFocusable(true);
         tile.setClickable(true);
@@ -246,7 +375,8 @@ public class MainActivity extends Activity {
 
         final TextView caption = new TextView(this);
         caption.setText(label);
-        caption.setTextColor(Color.WHITE);
+        caption.setTextColor(night ? 0xFFFF6B6B : Color.WHITE);
+        if (night) caption.setShadowLayer(12, 0, 0, 0xFFFF1A1A);
         caption.setAlpha(0.45f);
         caption.setTextSize(13);
         caption.setSingleLine(true);
@@ -256,7 +386,7 @@ public class MainActivity extends Activity {
             @Override
             public void onFocusChange(View v, boolean has) {
                 float s = has ? 1.1f : 1f;
-                v.animate().scaleX(s).scaleY(s).translationZ(has ? dp(8) : 0).setDuration(140).start();
+                v.animate().scaleX(s).scaleY(s).translationZ(has ? dp(night ? 24 : 8) : 0).setDuration(140).start();
                 caption.animate().alpha(has ? 1f : 0.45f).setDuration(140).start();
                 if (has) focusIndex = index;
             }
