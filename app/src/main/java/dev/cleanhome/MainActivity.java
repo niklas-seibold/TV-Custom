@@ -49,6 +49,7 @@ public class MainActivity extends Activity {
     };
     private static final String AIRSCREEN = "com.ionitech.airscreen";
 
+    static volatile boolean resumed = false;
     private LinearLayout row;
     private int focusIndex = 0;
     private float density;
@@ -282,6 +283,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        resumed = false;
         stopNightAnims();
         super.onPause();
     }
@@ -289,6 +291,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
         applyNight(false);
         if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
@@ -374,7 +377,7 @@ public class MainActivity extends Activity {
         float widthDp = m.widthPixels / density;
         float gapDp = 16;
         // 6 wide tiles + 1 square settings tile (width = tile height) must fit in ~92% of the screen.
-        float tileWdp = Math.min(170f, (widthDp * 0.92f - 48 - gapDp * 6) / (6f + 9f / 16f));
+        float tileWdp = Math.min(190f, (widthDp * 0.9f - 48 - gapDp * 5) / (5f + 9f / 16f));
         int w = dp(tileWdp), h = dp(tileWdp * 9f / 16f), gap = dp(gapDp);
 
         final PackageManager pm = getPackageManager();
@@ -405,12 +408,6 @@ public class MainActivity extends Activity {
             }
         });
 
-        addTile("AirPlay", null, false, "AirPlay", w, h, gap, new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openApp("AirPlay (AirScreen)", isInstalled(AIRSCREEN) ? AIRSCREEN : null, AIRSCREEN);
-            }
-        });
 
         Drawable gear = null;
         try {

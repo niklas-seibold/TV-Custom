@@ -50,21 +50,39 @@ public class HomeGuardService extends AccessibilityService {
         }
     }
 
+    /** Set once intercepting Home proved not to work on this TV; then we fall back to window events. */
+    private static volatile boolean keyPathBroken = false;
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+
     /** Catch the Home key before Fire OS handles it: instant, and avoids Android's app-switch delay. */
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
         if (e.getKeyCode() != KeyEvent.KEYCODE_HOME) return false;
-        if (System.currentTimeMillis() < Guard.pausedUntil) return false;
-        if (e.getAction() == KeyEvent.ACTION_UP) {
+        if (keyPathBroken || System.currentTimeMillis() < Guard.pausedUntil) return false;
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
             Log.i("CleanHome", "home key intercepted");
-            try {
-                startActivity(new Intent(this, MainActivity.class)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
-            } catch (Exception ex) {
-                Log.w("CleanHome", "home start failed", ex);
-            }
+            if (MainActivity.resumed) return true; // already on CleanHome
+            openHome();
+            // Safety net: if CleanHome didn't come up, stop intercepting and let Fire OS go home.
+            handler.postDelayed(() -> {
+                if (!MainActivity.resumed) {
+                    Log.w("CleanHome", "home via key failed; falling back");
+                    keyPathBroken = true;
+                    performGlobalAction(GLOBAL_ACTION_HOME);
+                }
+            }, 1200);
         }
         return true;
+    }
+
+    private void openHome() {
+        try {
+            startActivity(new Intent(this, MainActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
+        } catch (Exception ex) {
+            Log.w("CleanHome", "home start failed", ex);
+        }
     }
 
     @Override
