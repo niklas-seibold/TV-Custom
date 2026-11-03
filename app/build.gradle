@@ -9,8 +9,8 @@ android {
         minSdk 22
         // Fire OS 7 = Android 9. Targeting 28 keeps boot/background launch behaviour simple.
         targetSdk 28
-        versionCode 1
-        versionName '1.0'
+        versionCode 2
+        versionName '1.1'
     }
 
     signingConfigs {
@@ -33,4 +33,9 @@ android {
     }
 
     lint { abortOnError false; checkReleaseBuilds false }
+}
+
+dependencies {
+    // Tiny ADB client: lets the app finish its own setup over the TV's local ADB (no computer needed).
+    implementation 'com.tananaev:adblib:1.3'
 }

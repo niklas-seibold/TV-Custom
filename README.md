@@ -6,14 +6,18 @@ Design inspired by [CleanFrame](https://github.com/nthnclrk/CleanFrame) (Samsung
 
 Every push to `main` builds `CleanHome.apk` with GitHub Actions and attaches it to the latest Release.
 
-## Install (once, ~5 min)
+## Install — on the TV only (no computer)
 
-1. **TV:** Settings → My Fire TV → About → click the top entry 7× → back → Developer Options:
-   *ADB debugging* **ON**, *Apps from Unknown Sources* **ON**. Note the IP under About → Network.
-2. **Mac:** `brew install android-platform-tools` (Windows: install "SDK Platform Tools" from Google and use the same commands).
-3. Download `tools/install.sh` and run: `bash install.sh 192.168.x.x`
-   Accept the "Allow USB debugging?" prompt on the TV (tick *Always allow*).
-4. For AirPlay, install **AirScreen** from the Amazon Appstore (or just click the AirPlay tile).
+1. Settings → My Fire TV → About → click the top entry **7×** → back → **Developer Options** → **ADB debugging ON**.
+2. Install **Downloader** (by AFTVnews) from the Amazon Appstore.
+3. Developer Options → **Install unknown apps** → **Downloader ON**.
+4. Open Downloader, type `https://github.com/niklas-seibold/TV-Custom/releases/latest/download/CleanHome.apk` → Go → **Install** → **Open**.
+5. CleanHome asks to finish setup → **Set up** → on the "Allow USB debugging?" prompt tick **Always allow** → **OK**.
+6. Press Home on the remote to test. For AirPlay, click the AirPlay tile and install **AirScreen**.
+
+Updating later: same link in Downloader, Install again (settings are kept).
+
+Alternative with a computer: `bash tools/install.sh <TV-IP>`.
 
 ## Use
 

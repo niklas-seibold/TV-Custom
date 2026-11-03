@@ -56,6 +56,54 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
+        if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
+    }
+
+    // ---------------------------------------------------------------- one-time setup on the TV
+
+    private boolean setupBusy = false;
+    private AlertDialog setupDialog;
+
+    private void offerSetup() {
+        setupDialog = new AlertDialog.Builder(this)
+                .setTitle("Finish CleanHome setup")
+                .setMessage("This makes the Home button open CleanHome and turns off ad tracking.\n\n"
+                        + "Press Set up. The TV will then ask \"Allow USB debugging?\" — tick \"Always allow\" and press OK.")
+                .setPositiveButton("Set up", (d, w) -> startSetup())
+                .setNegativeButton("Later", null)
+                .setOnDismissListener(d -> setupDialog = null)
+                .show();
+    }
+
+    private void startSetup() {
+        setupBusy = true;
+        final AlertDialog waiting = new AlertDialog.Builder(this)
+                .setTitle("Setting up…")
+                .setMessage("If the TV asks \"Allow USB debugging?\", tick \"Always allow\" and press OK.")
+                .setCancelable(false)
+                .show();
+        new Thread(() -> {
+            final String err = SelfSetup.run(getApplicationContext());
+            runOnUiThread(() -> {
+                setupBusy = false;
+                try { waiting.dismiss(); } catch (Exception ignored) {}
+                if (isFinishing()) return;
+                if (err == null) {
+                    Toast.makeText(this, "All set. Press Home to try it.", Toast.LENGTH_LONG).show();
+                } else {
+                    setupDialog = new AlertDialog.Builder(this)
+                            .setTitle("Setup didn't finish")
+                            .setMessage(err)
+                            .setPositiveButton("Try again", (d, w) -> startSetup())
+                            .setNegativeButton("Open Settings", (d, w) -> {
+                                Guard.graceFor(4000);
+                                safeStart(new Intent(Settings.ACTION_SETTINGS), "Settings");
+                            })
+                            .setOnDismissListener(d -> setupDialog = null)
+                            .show();
+                }
+            });
+        }).start();
     }
 
     @Override
