@@ -16,6 +16,8 @@ import android.media.tv.TvContract;
 import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 import android.net.Uri;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.animation.OvershootInterpolator;
@@ -30,6 +32,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -63,6 +66,22 @@ public class MainActivity extends Activity {
             night = getPreferences(MODE_PRIVATE).getBoolean("night", false);
         } catch (Exception ignored) {
         }
+        bgImage = findViewById(R.id.bgImage);
+        scrim = findViewById(R.id.scrim);
+        bgBtn = findViewById(R.id.bgBtn);
+        bgIndex = getPreferences(MODE_PRIVATE).getInt("bg", 0);
+        bgBtn.setOnClickListener(v -> {
+            bgIndex = (bgIndex + 1) % BG_NAMES.length;
+            getPreferences(MODE_PRIVATE).edit().putInt("bg", bgIndex).apply();
+            if (night) {
+                night = false;
+                getPreferences(MODE_PRIVATE).edit().putBoolean("night", false).apply();
+                buildRow();
+                applyNight(false);
+            } else {
+                applyBackground();
+            }
+        });
         nightBtn.setOnClickListener(v -> {
             night = !night;
             getPreferences(MODE_PRIVATE).edit().putBoolean("night", night).apply();
@@ -70,6 +89,100 @@ public class MainActivity extends Activity {
             buildRow();
             applyNight(true);
         });
+    }
+
+    // ---------------------------------------------------------------- backgrounds
+
+    private static final String[] BG_NAMES = {"Dark", "Aurora", "Sunset", "Ocean", "Nature"};
+    private static final int[] BG_RES = {R.drawable.bg_gradient, R.drawable.bg_aurora,
+            R.drawable.bg_sunset, R.drawable.bg_ocean, R.drawable.bg_gradient};
+    private static final int NATURE = 4;
+    private int bgIndex = 0;
+    private ImageView bgImage;
+    private View scrim;
+    private TextView bgBtn;
+    private ObjectAnimator kenBurns;
+
+    private void applyBackground() {
+        if (bgIndex < 0 || bgIndex >= BG_NAMES.length) bgIndex = 0;
+        bgBtn.setText("Background: " + BG_NAMES[bgIndex]);
+        if (kenBurns != null) kenBurns.cancel();
+        if (night) {
+            root.setBackgroundResource(R.drawable.bg_night);
+            bgImage.setVisibility(View.GONE);
+            scrim.setVisibility(View.GONE);
+            return;
+        }
+        root.setBackgroundResource(BG_RES[bgIndex]);
+        if (bgIndex != NATURE) {
+            bgImage.setVisibility(View.GONE);
+            scrim.setVisibility(View.GONE);
+            return;
+        }
+        final File f = new File(getCacheDir(), "nature-" + (System.currentTimeMillis() / 86_400_000L) + ".jpg");
+        if (f.exists()) {
+            showNature(f);
+            return;
+        }
+        new Thread(() -> {
+            boolean ok = downloadNature(f);
+            runOnUiThread(() -> {
+                if (ok && !night && bgIndex == NATURE) showNature(f);
+                else if (!ok) Toast.makeText(this, "Couldn't load today's photo", Toast.LENGTH_SHORT).show();
+            });
+        }).start();
+    }
+
+    private void showNature(File f) {
+        Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath());
+        if (bmp == null) return;
+        bgImage.setImageBitmap(bmp);
+        bgImage.setAlpha(0f);
+        bgImage.setVisibility(View.VISIBLE);
+        scrim.setVisibility(View.VISIBLE);
+        bgImage.animate().alpha(1f).setDuration(800).start();
+        // Slow "Ken Burns" drift.
+        bgImage.setScaleX(1f);
+        bgImage.setScaleY(1f);
+        android.animation.PropertyValuesHolder sx = android.animation.PropertyValuesHolder.ofFloat("scaleX", 1f, 1.08f);
+        android.animation.PropertyValuesHolder sy = android.animation.PropertyValuesHolder.ofFloat("scaleY", 1f, 1.08f);
+        kenBurns = ObjectAnimator.ofPropertyValuesHolder(bgImage, sx, sy);
+        kenBurns.setDuration(40_000);
+        kenBurns.setRepeatMode(ValueAnimator.REVERSE);
+        kenBurns.setRepeatCount(ValueAnimator.INFINITE);
+        kenBurns.start();
+    }
+
+    /** Bing's photo of the day (nearly always a landscape), cached per day. */
+    private boolean downloadNature(File out) {
+        try {
+            String json = new String(readUrl("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US"), "UTF-8");
+            String path = new org.json.JSONObject(json).getJSONArray("images").getJSONObject(0).getString("url");
+            byte[] img = readUrl(path.startsWith("http") ? path : "https://www.bing.com" + path);
+            File[] old = getCacheDir().listFiles();
+            if (old != null) for (File o : old) if (o.getName().startsWith("nature-")) o.delete();
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+            fos.write(img);
+            fos.close();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static byte[] readUrl(String url) throws Exception {
+        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(15000);
+        try (java.io.InputStream in = c.getInputStream()) {
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            return bo.toByteArray();
+        } finally {
+            c.disconnect();
+        }
     }
 
     // ---------------------------------------------------------------- boys night mode
@@ -86,7 +199,7 @@ public class MainActivity extends Activity {
 
     private void applyNight(boolean animate) {
         stopNightAnims();
-        root.setBackgroundResource(night ? R.drawable.bg_night : R.drawable.bg_gradient);
+        applyBackground();
         nightBtn.setText(night ? "\u25CF  Boys Night ON" : "Boys Night");
         nightBtn.setTextColor(night ? 0xFFFF4A4A : Color.WHITE);
         nightBtn.setShadowLayer(night ? 18 : 0, 0, 0, 0xFFFF1A1A);
