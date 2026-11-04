@@ -241,6 +241,7 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- background picker (inline)
 
     private HorizontalScrollView bgStrip;
+    private boolean deleteMode = false;
     private LinearLayout bgStripRow;
 
     /** Uploaded photos: any image in Android/data/dev.cleanhome/files/ */
@@ -281,13 +282,22 @@ public class MainActivity extends Activity {
                 });
             }
         } else {
-            addCard("\u2039 Back", getResources().getDrawable(R.drawable.bg_gradient, getTheme()), false, v -> toggleBgStrip(false));
+            addCard("\u2039 Back", getResources().getDrawable(R.drawable.bg_gradient, getTheme()), false, v -> { deleteMode = false; toggleBgStrip(false); });
+            addCard(deleteMode ? "Done" : "Delete photos", getResources().getDrawable(R.drawable.ic_settings, getTheme()), deleteMode, v -> {
+                deleteMode = !deleteMode;
+                toggleBgStrip(true);
+            });
             String chosen = getPreferences(MODE_PRIVATE).getString("photo", null);
             List<File> ps = photos();
             if (ps.isEmpty()) Toast.makeText(this, "No photos yet — copy some to the TV first", Toast.LENGTH_LONG).show();
             for (int i = 0; i < ps.size(); i++) {
                 final File f = ps.get(i);
-                addCard("Photo " + (i + 1), thumb(f), f.getName().equals(chosen) && bgIndex == PHOTO, v -> {
+                addCard(deleteMode ? "\u2715 Delete" : "Photo " + (i + 1), thumb(f), !deleteMode && f.getName().equals(chosen) && bgIndex == PHOTO, v -> {
+                    if (deleteMode) {
+                        f.delete();
+                        toggleBgStrip(true);
+                        return;
+                    }
                     getPreferences(MODE_PRIVATE).edit().putString("photo", f.getName()).apply();
                     chooseBg(PHOTO);
                 });
@@ -297,7 +307,7 @@ public class MainActivity extends Activity {
         bgStrip.setAlpha(0f);
         bgStrip.setTranslationY(-dp(12));
         bgStrip.animate().alpha(1f).translationY(0).setDuration(180).start();
-        View first = bgStripRow.getChildAt(photoMode ? Math.min(1, bgStripRow.getChildCount() - 1) : Math.max(0, bgIndex));
+        View first = bgStripRow.getChildAt(photoMode ? Math.min(deleteMode ? 2 : 1, bgStripRow.getChildCount() - 1) : Math.max(0, bgIndex));
         if (first != null) ((ViewGroupHolder) first.getTag()).tile.requestFocus();
     }
 
@@ -347,7 +357,9 @@ public class MainActivity extends Activity {
         card.setClickable(true);
         card.setOnClickListener(click);
         ImageView iv = new ImageView(this);
-        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        boolean icon = preview instanceof android.graphics.drawable.VectorDrawable;
+        iv.setScaleType(icon ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
+        if (icon) iv.setPadding(dp(28), dp(22), dp(28), dp(22));
         iv.setImageDrawable(preview);
         card.addView(iv, new FrameLayout.LayoutParams(-1, -1));
         final TextView t = new TextView(this);
@@ -670,7 +682,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
-        snapshotScreen();
         if (saver != null) stopSaver();
         stopNightAnims();
         super.onPause();
@@ -680,25 +691,11 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
-        // Real screen is up: drop the instant cover (after one frame so there's no flicker).
-        root.post(() -> { if (HomeGuardService.instance != null) HomeGuardService.instance.hideCover(); });
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
         applyNight(false);
         refreshMatches();
         lastInput = System.currentTimeMillis();
         if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
-    }
-
-    private void snapshotScreen() {
-        try {
-            if (root.getWidth() == 0 || bgStrip.getVisibility() == View.VISIBLE) return;
-            Bitmap b = Bitmap.createBitmap(root.getWidth() / 2, root.getHeight() / 2, Bitmap.Config.RGB_565);
-            android.graphics.Canvas c = new android.graphics.Canvas(b);
-            c.scale(0.5f, 0.5f);
-            root.draw(c);
-            Guard.snapshot = b;
-        } catch (Throwable ignored) {
-        }
     }
 
     // ---------------------------------------------------------------- one-time setup on the TV
@@ -969,6 +966,26 @@ public class MainActivity extends Activity {
     }
 
     private void openHdmi1() {
+        // Preferred: the shell helper (tools/home.sh) presses the TV's own HDMI 1 key.
+        final File cmd = new File(getExternalFilesDir(null), ".cmd");
+        try {
+            java.io.FileOutputStream o = new java.io.FileOutputStream(cmd);
+            o.write("hdmi1".getBytes());
+            o.close();
+            Guard.graceFor(5000);
+            root.postDelayed(() -> {
+                if (cmd.exists()) { // helper not running: fall back
+                    cmd.delete();
+                    openHdmi1Fallback();
+                }
+            }, 1200);
+            return;
+        } catch (Exception ignored) {
+        }
+        openHdmi1Fallback();
+    }
+
+    private void openHdmi1Fallback() {
         List<TvInputInfo> all = new ArrayList<>();
         try {
             TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
