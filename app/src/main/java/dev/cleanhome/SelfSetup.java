@@ -154,7 +154,7 @@ final class SelfSetup {
         }
     }
 
-    private static AdbCrypto loadOrCreateKey(Context c) throws Exception {
+    static AdbCrypto loadOrCreateKey(Context c) throws Exception {
         AdbBase64 b64 = new AdbBase64() {
             @Override
             public String encodeToString(byte[] data) {

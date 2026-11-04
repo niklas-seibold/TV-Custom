@@ -81,6 +81,14 @@ public class MainActivity extends Activity {
         saverImg = findViewById(R.id.saverImg);
         disco = findViewById(R.id.disco);
         idleHandler.postDelayed(idleCheck, 30_000);
+        helperStatus = new TextView(this);
+        helperStatus.setTextColor(0x88FFFFFF);
+        helperStatus.setTextSize(11);
+        FrameLayout.LayoutParams hp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START);
+        hp.leftMargin = dp(16);
+        hp.bottomMargin = dp(8);
+        ((FrameLayout) root).addView(helperStatus, hp);
+        ensureHelperAsync();
         try {
             girls = getPreferences(MODE_PRIVATE).getBoolean("girls", false);
         } catch (Exception ignored) {
@@ -181,13 +189,7 @@ public class MainActivity extends Activity {
     }
 
     private void showNature(File f) {
-        BitmapFactory.Options o = new BitmapFactory.Options();
-        o.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(f.getAbsolutePath(), o);
-        o.inSampleSize = 1;
-        while (o.outWidth / (o.inSampleSize * 2) >= 1920) o.inSampleSize *= 2;
-        o.inJustDecodeBounds = false;
-        Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+        Bitmap bmp = decode(f, 1920);
         if (bmp == null) return;
         bgImage.setImageBitmap(bmp);
         bgImage.setAlpha(0f);
@@ -236,6 +238,32 @@ public class MainActivity extends Activity {
         } finally {
             c.disconnect();
         }
+    }
+
+    // ---------------------------------------------------------------- shell helper (Home + HDMI)
+
+    private TextView helperStatus;
+    private volatile boolean helperBusy = false;
+    private long helperTriedAt = 0;
+
+    private void ensureHelperAsync() {
+        if (helperStatus == null) return;
+        if (LocalAdb.helperAlive(this)) {
+            helperStatus.setVisibility(View.GONE);
+            return;
+        }
+        if (helperBusy || System.currentTimeMillis() - helperTriedAt < 60_000) return;
+        helperBusy = true;
+        helperTriedAt = System.currentTimeMillis();
+        new Thread(() -> {
+            LocalAdb.ensureHelper(getApplicationContext());
+            runOnUiThread(() -> {
+                helperBusy = false;
+                boolean ok = LocalAdb.helperAlive(this) || LocalAdb.status.startsWith("running");
+                helperStatus.setVisibility(ok ? View.GONE : View.VISIBLE);
+                helperStatus.setText("Helper: " + LocalAdb.status);
+            });
+        }).start();
     }
 
     // ---------------------------------------------------------------- background picker (inline)
@@ -329,15 +357,38 @@ public class MainActivity extends Activity {
         bgBtn.requestFocus();
     }
 
-    private Drawable thumb(File f) {
+    /** Decode downsampled and upright (iPhone photos store rotation in EXIF). */
+    static Bitmap decode(File f, int maxW) {
         try {
             BitmapFactory.Options o = new BitmapFactory.Options();
             o.inJustDecodeBounds = true;
             BitmapFactory.decodeFile(f.getAbsolutePath(), o);
             o.inSampleSize = 1;
-            while (o.outWidth / (o.inSampleSize * 2) >= 320) o.inSampleSize *= 2;
+            while (Math.max(o.outWidth, o.outHeight) / (o.inSampleSize * 2) >= maxW) o.inSampleSize *= 2;
             o.inJustDecodeBounds = false;
             Bitmap b = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            if (b == null) return null;
+            int deg = 0;
+            try {
+                int or = new android.media.ExifInterface(f.getAbsolutePath()).getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL);
+                if (or == android.media.ExifInterface.ORIENTATION_ROTATE_90) deg = 90;
+                else if (or == android.media.ExifInterface.ORIENTATION_ROTATE_180) deg = 180;
+                else if (or == android.media.ExifInterface.ORIENTATION_ROTATE_270) deg = 270;
+            } catch (Exception ignored) {
+            }
+            if (deg == 0) return b;
+            android.graphics.Matrix m = new android.graphics.Matrix();
+            m.postRotate(deg);
+            return Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private Drawable thumb(File f) {
+        try {
+            Bitmap b = decode(f, 320);
             return b == null ? null : new android.graphics.drawable.BitmapDrawable(getResources(), b);
         } catch (Exception e) {
             return null;
@@ -425,13 +476,7 @@ public class MainActivity extends Activity {
             saverImg.setImageResource(BG_RES[(saverPos++) % 4]);
         } else {
             File f = saverFiles.get((saverPos++) % saverFiles.size());
-            BitmapFactory.Options o = new BitmapFactory.Options();
-            o.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(f.getAbsolutePath(), o);
-            o.inSampleSize = 1;
-            while (o.outWidth / (o.inSampleSize * 2) >= 1920) o.inSampleSize *= 2;
-            o.inJustDecodeBounds = false;
-            Bitmap b = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            Bitmap b = decode(f, 1920);
             if (b != null) saverImg.setImageBitmap(b);
         }
         saverImg.setAlpha(0f);
@@ -694,6 +739,7 @@ public class MainActivity extends Activity {
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
         applyNight(false);
         refreshMatches();
+        ensureHelperAsync();
         lastInput = System.currentTimeMillis();
         if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
     }
@@ -968,6 +1014,13 @@ public class MainActivity extends Activity {
     private void openHdmi1() {
         // Preferred: the shell helper (tools/home.sh) presses the TV's own HDMI 1 key.
         final File cmd = new File(getExternalFilesDir(null), ".cmd");
+        if (!LocalAdb.helperAlive(this)) {
+            new Thread(() -> {
+                String r = LocalAdb.exec(getApplicationContext(), "input keyevent 243");
+                if (r == null) runOnUiThread(this::openHdmi1Fallback);
+            }).start();
+            return;
+        }
         try {
             java.io.FileOutputStream o = new java.io.FileOutputStream(cmd);
             o.write("hdmi1".getBytes());
