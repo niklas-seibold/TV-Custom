@@ -17,6 +17,8 @@ final class Guard {
     static volatile long pausedUntil = 0;
     /** Short grace window after we open a system screen (HDMI, Settings) that may live in the Amazon package. */
     static volatile long graceUntil = 0;
+    /** Last picture of the CleanHome screen, shown instantly while Android delays the real switch. */
+    static volatile android.graphics.Bitmap snapshot;
 
     /** Amazon-launcher screens we open on purpose (e.g. the HDMI viewer) — never redirected. */
     static final Set<String> allowed = Collections.synchronizedSet(new HashSet<String>());

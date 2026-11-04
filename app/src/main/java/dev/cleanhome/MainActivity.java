@@ -670,6 +670,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        snapshotScreen();
         if (saver != null) stopSaver();
         stopNightAnims();
         super.onPause();
@@ -679,11 +680,25 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        // Real screen is up: drop the instant cover (after one frame so there's no flicker).
+        root.post(() -> { if (HomeGuardService.instance != null) HomeGuardService.instance.hideCover(); });
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
         applyNight(false);
         refreshMatches();
         lastInput = System.currentTimeMillis();
         if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
+    }
+
+    private void snapshotScreen() {
+        try {
+            if (root.getWidth() == 0 || bgStrip.getVisibility() == View.VISIBLE) return;
+            Bitmap b = Bitmap.createBitmap(root.getWidth() / 2, root.getHeight() / 2, Bitmap.Config.RGB_565);
+            android.graphics.Canvas c = new android.graphics.Canvas(b);
+            c.scale(0.5f, 0.5f);
+            root.draw(c);
+            Guard.snapshot = b;
+        } catch (Throwable ignored) {
+        }
     }
 
     // ---------------------------------------------------------------- one-time setup on the TV

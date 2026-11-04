@@ -4,6 +4,10 @@ import android.accessibilityservice.AccessibilityService;
 import android.content.Intent;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.graphics.PixelFormat;
+import android.widget.ImageView;
 import android.view.accessibility.AccessibilityEvent;
 
 /**
@@ -13,17 +17,22 @@ import android.view.accessibility.AccessibilityEvent;
  */
 public class HomeGuardService extends AccessibilityService {
     static volatile boolean running = false;
+    static HomeGuardService instance;
+    private View cover;
     private long lastRedirect;
 
     @Override
     protected void onServiceConnected() {
         running = true;
+        instance = this;
         Log.i("CleanHome", "guard connected");
     }
 
     @Override
     public void onDestroy() {
         running = false;
+        instance = null;
+        hideCover();
         super.onDestroy();
     }
 
@@ -42,6 +51,7 @@ public class HomeGuardService extends AccessibilityService {
         if (now - lastRedirect < 400) return;
         lastRedirect = now;
         Log.i("CleanHome", "redirecting from " + cls);
+        showCover();
         try {
             startActivity(new Intent(this, MainActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
@@ -83,6 +93,42 @@ public class HomeGuardService extends AccessibilityService {
         } catch (Exception ex) {
             Log.w("CleanHome", "home start failed", ex);
         }
+    }
+
+    /**
+     * Android delays app switches for a few seconds after Home. Cover Amazon's home instantly with a
+     * snapshot of CleanHome; MainActivity removes the cover as soon as it is really on screen.
+     */
+    private void showCover() {
+        if (cover != null) return;
+        try {
+            ImageView iv = new ImageView(this);
+            iv.setScaleType(ImageView.ScaleType.FIT_XY);
+            if (Guard.snapshot != null) iv.setImageBitmap(Guard.snapshot);
+            else iv.setImageResource(R.drawable.bg_gradient);
+            iv.setFocusable(true);
+            iv.setFocusableInTouchMode(true);
+            iv.setOnKeyListener((v, code, ev) -> true); // swallow presses until CleanHome is up
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    PixelFormat.OPAQUE);
+            ((WindowManager) getSystemService(WINDOW_SERVICE)).addView(iv, lp);
+            cover = iv;
+            handler.postDelayed(this::hideCover, 8000); // never get stuck
+        } catch (Exception ex) {
+            Log.w("CleanHome", "cover failed", ex);
+        }
+    }
+
+    void hideCover() {
+        if (cover == null) return;
+        try {
+            ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(cover);
+        } catch (Exception ignored) {
+        }
+        cover = null;
     }
 
     @Override
