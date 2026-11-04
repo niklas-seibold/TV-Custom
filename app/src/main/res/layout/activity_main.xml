@@ -19,6 +19,19 @@
         android:background="@drawable/scrim"
         android:visibility="gone" />
 
+    <View
+        android:id="@+id/vignette"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/vignette"
+        android:visibility="gone" />
+
+    <dev.cleanhome.FlowerView
+        android:id="@+id/flowers"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/gameOn"
         android:layout_width="wrap_content"
@@ -51,13 +64,31 @@
             android:background="@drawable/pill_bg"
             android:focusable="true"
             android:clickable="true"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
-            android:text="Boys Night"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:text="Boys night"
             android:textColor="#FFFFFFFF"
-            android:textSize="16sp" />
+            android:textSize="13sp"
+            android:alpha="0.7" />
+
+        <TextView
+            android:id="@+id/girlsBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/pill_bg"
+            android:focusable="true"
+            android:clickable="true"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:text="Girls night"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp"
+            android:alpha="0.7" />
 
         <TextView
             android:id="@+id/bgBtn"
@@ -67,13 +98,14 @@
             android:background="@drawable/pill_bg"
             android:focusable="true"
             android:clickable="true"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
             android:text="Background"
             android:textColor="#FFFFFFFF"
-            android:textSize="16sp" />
+            android:textSize="13sp"
+            android:alpha="0.7" />
     </LinearLayout>
 
     <LinearLayout
@@ -102,6 +134,23 @@
             android:format24Hour="EEEE, d MMMM"
             android:textColor="#99FFFFFF"
             android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/matchBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:alpha="0.8"
+            android:background="@drawable/pill_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <HorizontalScrollView

@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        getExternalFilesDir(null); // creates the folder the private photo is copied into
         setContentView(R.layout.activity_main);
         row = findViewById(R.id.row);
         density = getResources().getDisplayMetrics().density;
@@ -80,24 +81,39 @@ public class MainActivity extends Activity {
                 getPreferences(MODE_PRIVATE).edit().putBoolean("night", false).apply();
                 buildRow();
                 applyNight(false);
+        refreshMatches();
             } else {
                 applyBackground();
             }
         });
-        nightBtn.setOnClickListener(v -> {
-            night = !night;
-            getPreferences(MODE_PRIVATE).edit().putBoolean("night", night).apply();
-            if (night) focusIndex = 4; // PS5
-            buildRow();
-            applyNight(true);
-        });
+        try {
+            girls = getPreferences(MODE_PRIVATE).getBoolean("girls", false);
+        } catch (Exception ignored) {
+        }
+        girlsBtn = findViewById(R.id.girlsBtn);
+        flowers = findViewById(R.id.flowers);
+        vignette = findViewById(R.id.vignette);
+        matchBtn = findViewById(R.id.matchBtn);
+        matchBtn.setOnClickListener(v -> showMatches());
+        nightBtn.setOnClickListener(v -> setMode(!(night && !girls), false));
+        girlsBtn.setOnClickListener(v -> setMode(!(night && girls), true));
+    }
+
+    private void setMode(boolean on, boolean girlsMode) {
+        night = on;
+        girls = on && girlsMode;
+        getPreferences(MODE_PRIVATE).edit().putBoolean("night", night).putBoolean("girls", girls).apply();
+        if (night && !girls) focusIndex = 4; // PS5
+        buildRow();
+        applyNight(true);
     }
 
     // ---------------------------------------------------------------- backgrounds
 
-    private static final String[] BG_NAMES = {"Dark", "Aurora", "Sunset", "Ocean", "Nature"};
+    private static final String[] BG_NAMES = {"Dark", "Aurora", "Sunset", "Ocean", "Nature", "Photo"};
     private static final int[] BG_RES = {R.drawable.bg_gradient, R.drawable.bg_aurora,
-            R.drawable.bg_sunset, R.drawable.bg_ocean, R.drawable.bg_gradient};
+            R.drawable.bg_sunset, R.drawable.bg_ocean, R.drawable.bg_gradient, R.drawable.bg_gradient};
+    private static final int PHOTO = 5;
     private static final int NATURE = 4;
     private int bgIndex = 0;
     private ImageView bgImage;
@@ -107,15 +123,21 @@ public class MainActivity extends Activity {
 
     private void applyBackground() {
         if (bgIndex < 0 || bgIndex >= BG_NAMES.length) bgIndex = 0;
-        bgBtn.setText("Background: " + BG_NAMES[bgIndex]);
+        bgBtn.setText("Background \u00B7 " + BG_NAMES[bgIndex]);
+        vignette.setVisibility(View.GONE);
+        bgImage.clearColorFilter();
         if (kenBurns != null) kenBurns.cancel();
         if (night) {
-            root.setBackgroundResource(R.drawable.bg_night);
+            root.setBackgroundResource(girls ? R.drawable.bg_girls : R.drawable.bg_night);
             bgImage.setVisibility(View.GONE);
             scrim.setVisibility(View.GONE);
             return;
         }
         root.setBackgroundResource(BG_RES[bgIndex]);
+        if (bgIndex == PHOTO) {
+            showPhoto();
+            return;
+        }
         if (bgIndex != NATURE) {
             bgImage.setVisibility(View.GONE);
             scrim.setVisibility(View.GONE);
@@ -135,8 +157,38 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    /** Private photo copied to the TV (never on GitHub): Android/data/dev.cleanhome/files/wallpaper.jpg */
+    private void showPhoto() {
+        File dir = getExternalFilesDir(null);
+        File f = dir == null ? null : new File(dir, "wallpaper.jpg");
+        if (f == null || !f.exists()) {
+            bgImage.setVisibility(View.GONE);
+            scrim.setVisibility(View.GONE);
+            Toast.makeText(this, "No photo yet — copy wallpaper.jpg to the TV first", Toast.LENGTH_LONG).show();
+            return;
+        }
+        showNature(f);
+        // Cinematic grade: lower saturation, more contrast, warm highlights / teal shadows.
+        android.graphics.ColorMatrix m = new android.graphics.ColorMatrix();
+        m.setSaturation(0.7f);
+        float c = 1.18f, t = (1 - c) * 128;
+        m.postConcat(new android.graphics.ColorMatrix(new float[]{
+                c * 1.06f, 0, 0, 0, t + 6,
+                0, c, 0, 0, t,
+                0, 0, c * 0.92f, 0, t + 10,
+                0, 0, 0, 1, 0}));
+        bgImage.setColorFilter(new android.graphics.ColorMatrixColorFilter(m));
+        vignette.setVisibility(View.VISIBLE);
+    }
+
     private void showNature(File f) {
-        Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath());
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+        o.inSampleSize = 1;
+        while (o.outWidth / (o.inSampleSize * 2) >= 1920) o.inSampleSize *= 2;
+        o.inJustDecodeBounds = false;
+        Bitmap bmp = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
         if (bmp == null) return;
         bgImage.setImageBitmap(bmp);
         bgImage.setAlpha(0f);
@@ -172,7 +224,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private static byte[] readUrl(String url) throws Exception {
+    static byte[] readUrl(String url) throws Exception {
         java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(15000);
@@ -187,11 +239,55 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ---------------------------------------------------------------- football
+
+    private List<Football.Match> matches = new ArrayList<>();
+    private long matchesAt = 0;
+
+    private void refreshMatches() {
+        if (System.currentTimeMillis() - matchesAt < 15 * 60_000L) return;
+        matchesAt = System.currentTimeMillis();
+        new Thread(() -> {
+            List<Football.Match> list = Football.today();
+            runOnUiThread(() -> {
+                matches = list;
+                if (list.isEmpty()) {
+                    matchBtn.setVisibility(View.GONE);
+                    return;
+                }
+                Football.Match m = list.get(0);
+                matchBtn.setText("\u26BD  " + m.home + " \u2013 " + m.away + "  \u00B7  " + (m.live ? "LIVE" : m.time())
+                        + "  \u00B7  " + m.channel + (list.size() > 1 ? "  (+" + (list.size() - 1) + ")" : ""));
+                matchBtn.setVisibility(View.VISIBLE);
+            });
+        }).start();
+    }
+
+    private void showMatches() {
+        StringBuilder sb = new StringBuilder();
+        for (Football.Match m : matches) {
+            sb.append(m.live ? "LIVE" : m.time()).append("   ").append(m.home).append(" \u2013 ").append(m.away)
+                    .append("\n").append(m.comp).append(" \u00B7 ").append(m.channel).append("\n\n");
+        }
+        sb.append("Channels follow the usual German TV rights and may vary for individual games.");
+        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle("Football today").setMessage(sb.toString())
+                .setNegativeButton("Close", null);
+        String prime = installed(APPS[2]);
+        if (prime != null) b.setPositiveButton("Open Prime Video", (d, w) -> openApp("Prime Video", prime, APPS[2][1]));
+        b.show();
+    }
+
     // ---------------------------------------------------------------- boys night mode
 
     private boolean night = false;
     private View root;
-    private TextView gameOn, nightBtn;
+    private TextView gameOn, nightBtn, girlsBtn, matchBtn;
+    private boolean girls = false;
+    private FlowerView flowers;
+    private View vignette;
+
+    private int accent() { return girls ? 0xFFFF6FB5 : 0xFFFF1A1A; }
+    private int accentSoft() { return girls ? 0xFFFFA8D4 : 0xFFFF6B6B; }
     private final List<Animator> nightAnims = new ArrayList<>();
 
     private void stopNightAnims() {
@@ -202,9 +298,18 @@ public class MainActivity extends Activity {
     private void applyNight(boolean animate) {
         stopNightAnims();
         applyBackground();
-        nightBtn.setText(night ? "\u25CF  Boys Night ON" : "Boys Night");
-        nightBtn.setTextColor(night ? 0xFFFF4A4A : Color.WHITE);
-        nightBtn.setShadowLayer(night ? 18 : 0, 0, 0, 0xFFFF1A1A);
+        boolean boysOn = night && !girls, girlsOn = night && girls;
+        nightBtn.setText(boysOn ? "\u25CF  Boys night" : "Boys night");
+        nightBtn.setTextColor(boysOn ? 0xFFFF4A4A : Color.WHITE);
+        nightBtn.setAlpha(boysOn ? 1f : 0.7f);
+        girlsBtn.setText(girlsOn ? "\u25CF  Girls night" : "Girls night");
+        girlsBtn.setTextColor(girlsOn ? 0xFFFF8CC6 : Color.WHITE);
+        girlsBtn.setAlpha(girlsOn ? 1f : 0.7f);
+        gameOn.setText(girls ? "girls night" : "GAME ON");
+        gameOn.setTypeface(girls ? Typeface.create("cursive", Typeface.BOLD) : Typeface.create("sans-serif-black", Typeface.ITALIC));
+        gameOn.setLetterSpacing(girls ? 0.02f : 0.12f);
+        gameOn.setTextColor(accentSoft());
+        flowers.setVisibility(girlsOn ? View.VISIBLE : View.GONE);
 
         if (!night) {
             gameOn.setVisibility(View.GONE);
@@ -219,6 +324,18 @@ public class MainActivity extends Activity {
         }
 
         gameOn.setVisibility(View.VISIBLE);
+        if (girls) {
+            ObjectAnimator bloom = ObjectAnimator.ofFloat(flowers, "bloom", animate ? 0f : 1f, 1f);
+            bloom.setDuration(animate ? 1600 : 1);
+            ObjectAnimator sway = ObjectAnimator.ofFloat(flowers, "sway", 0f, 1f);
+            sway.setDuration(6000);
+            sway.setRepeatCount(ValueAnimator.INFINITE);
+            sway.setInterpolator(new android.view.animation.LinearInterpolator());
+            nightAnims.add(bloom);
+            nightAnims.add(sway);
+            bloom.start();
+            sway.start();
+        }
         // Neon pulse that runs forever (glow radius + brightness breathe).
         ValueAnimator pulse = ValueAnimator.ofFloat(0f, 1f);
         pulse.setDuration(1800);
@@ -226,7 +343,7 @@ public class MainActivity extends Activity {
         pulse.setRepeatCount(ValueAnimator.INFINITE);
         pulse.addUpdateListener(a -> {
             float f = (float) a.getAnimatedValue();
-            gameOn.setShadowLayer(25 + 35 * f, 0, 0, 0xFFFF1A1A);
+            gameOn.setShadowLayer(25 + 35 * f, 0, 0, accent());
             gameOn.setAlpha(0.45f + 0.35f * f);
         });
 
@@ -242,7 +359,9 @@ public class MainActivity extends Activity {
                     ObjectAnimator.ofFloat(gameOn, "alpha", 0f, 1f));
             slam.setInterpolator(new OvershootInterpolator(1.6f));
             slam.setDuration(520);
-            ObjectAnimator flicker = ObjectAnimator.ofFloat(gameOn, "alpha", 1f, 0.15f, 1f, 0.3f, 0.9f, 0.2f, 1f, 0.6f);
+            ObjectAnimator flicker = girls
+                    ? ObjectAnimator.ofFloat(gameOn, "alpha", 1f, 0.7f, 1f, 0.8f)
+                    : ObjectAnimator.ofFloat(gameOn, "alpha", 1f, 0.15f, 1f, 0.3f, 0.9f, 0.2f, 1f, 0.6f);
             flicker.setDuration(750);
             AnimatorSet seq = new AnimatorSet();
             seq.playSequentially(slam, flicker, pulse);
@@ -449,11 +568,12 @@ public class MainActivity extends Activity {
 
         final FrameLayout tile = new FrameLayout(this);
         tile.setBackgroundResource(R.drawable.tile_bg);
-        tile.setForeground(getResources().getDrawable(night ? R.drawable.tile_ring_night : R.drawable.tile_ring, getTheme()));
+        tile.setForeground(getResources().getDrawable(!night ? R.drawable.tile_ring
+                : girls ? R.drawable.tile_ring_girls : R.drawable.tile_ring_night, getTheme()));
         if (night && Build.VERSION.SDK_INT >= 28) {
             // Red neon glow via coloured elevation shadow.
-            tile.setOutlineSpotShadowColor(0xFFFF1A1A);
-            tile.setOutlineAmbientShadowColor(0xFFFF1A1A);
+            tile.setOutlineSpotShadowColor(accent());
+            tile.setOutlineAmbientShadowColor(accent());
             tile.setElevation(dp(10));
         }
         tile.setClipToOutline(true);
@@ -486,8 +606,8 @@ public class MainActivity extends Activity {
 
         final TextView caption = new TextView(this);
         caption.setText(label);
-        caption.setTextColor(night ? 0xFFFF6B6B : Color.WHITE);
-        if (night) caption.setShadowLayer(12, 0, 0, 0xFFFF1A1A);
+        caption.setTextColor(night ? accentSoft() : Color.WHITE);
+        if (night) caption.setShadowLayer(12, 0, 0, accent());
         caption.setAlpha(0.45f);
         caption.setTextSize(13);
         caption.setSingleLine(true);
