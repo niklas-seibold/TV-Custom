@@ -81,14 +81,7 @@ public class MainActivity extends Activity {
         saverImg = findViewById(R.id.saverImg);
         disco = findViewById(R.id.disco);
         idleHandler.postDelayed(idleCheck, 30_000);
-        helperStatus = new TextView(this);
-        helperStatus.setTextColor(0x88FFFFFF);
-        helperStatus.setTextSize(11);
-        FrameLayout.LayoutParams hp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.START);
-        hp.leftMargin = dp(16);
-        hp.bottomMargin = dp(8);
-        ((FrameLayout) root).addView(helperStatus, hp);
-        ensureHelperAsync();
+
         try {
             girls = getPreferences(MODE_PRIVATE).getBoolean("girls", false);
         } catch (Exception ignored) {
@@ -238,32 +231,6 @@ public class MainActivity extends Activity {
         } finally {
             c.disconnect();
         }
-    }
-
-    // ---------------------------------------------------------------- shell helper (Home + HDMI)
-
-    private TextView helperStatus;
-    private volatile boolean helperBusy = false;
-    private long helperTriedAt = 0;
-
-    private void ensureHelperAsync() {
-        if (helperStatus == null) return;
-        if (LocalAdb.helperAlive(this)) {
-            helperStatus.setVisibility(View.GONE);
-            return;
-        }
-        if (helperBusy || System.currentTimeMillis() - helperTriedAt < 60_000) return;
-        helperBusy = true;
-        helperTriedAt = System.currentTimeMillis();
-        new Thread(() -> {
-            LocalAdb.ensureHelper(getApplicationContext());
-            runOnUiThread(() -> {
-                helperBusy = false;
-                boolean ok = LocalAdb.helperAlive(this) || LocalAdb.status.startsWith("running");
-                helperStatus.setVisibility(ok ? View.GONE : View.VISIBLE);
-                helperStatus.setText("Helper: " + LocalAdb.status);
-            });
-        }).start();
     }
 
     // ---------------------------------------------------------------- background picker (inline)
@@ -739,7 +706,6 @@ public class MainActivity extends Activity {
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
         applyNight(false);
         refreshMatches();
-        ensureHelperAsync();
         lastInput = System.currentTimeMillis();
         if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
     }
@@ -1014,11 +980,8 @@ public class MainActivity extends Activity {
     private void openHdmi1() {
         // Preferred: the shell helper (tools/home.sh) presses the TV's own HDMI 1 key.
         final File cmd = new File(getExternalFilesDir(null), ".cmd");
-        if (!LocalAdb.helperAlive(this)) {
-            new Thread(() -> {
-                String r = LocalAdb.exec(getApplicationContext(), "input keyevent 243");
-                if (r == null) runOnUiThread(this::openHdmi1Fallback);
-            }).start();
+        if (!LocalAdb.helperAlive(this)) { // helper only runs if started from iSH (tools/home.sh)
+            openHdmi1Fallback();
             return;
         }
         try {

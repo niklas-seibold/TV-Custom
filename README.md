@@ -29,6 +29,29 @@ Alternative with a computer: `bash tools/install.sh <TV-IP>`.
 
 `bash tools/uninstall.sh 192.168.x.x` — restores everything.
 
+## Optional: shell helper (instant Home + real HDMI 1)
+
+Fire OS blocks apps from catching Home and from switching HDMI inputs. The helper in `tools/home.sh`
+runs with adb-shell rights and does both. It stops when the TV loses power; start it again from iSH:
+
+```
+wget -O home.sh https://raw.githubusercontent.com/niklas-seibold/TV-Custom/main/tools/home.sh
+adb push home.sh /data/local/tmp/
+adb shell "nohup sh /data/local/tmp/home.sh >/dev/null 2>&1 &"
+```
+
+Without the helper, Home works via the accessibility redirect (short delay), and the PS5 tile uses
+Amazon's HDMI player if `com.amazon.tv.permission.TUNE_INPUT` could be granted, otherwise Live TV.
+
+## Features
+
+Boys night / Girls night modes · backgrounds (Dark, Aurora, Sunset, Ocean, daily Nature photo, your own
+private photos with a cinematic grade) · screensaver after 4 min · football match button
+(Champions League / World Cup / Euros) · secret code ↑↑↓↓←→←→ for Disco Mode · Menu (≡) opens the
+stock Fire TV home for 2 minutes.
+
+Photos are private: copy them to `/sdcard/Android/data/dev.cleanhome/files/` with `adb push`; they are never in this repo.
+
 ## Notes
 
 - Fire OS sends Home to Amazon's launcher; an accessibility service (“CleanHome Home button”) instantly brings CleanHome back. A brief flash of the stock home is possible.
