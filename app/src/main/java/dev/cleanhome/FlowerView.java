@@ -22,7 +22,6 @@ public class FlowerView extends View {
         super(c, a);
         stroke.setStyle(Paint.Style.STROKE);
         glow.setStyle(Paint.Style.STROKE);
-        setLayerType(LAYER_TYPE_SOFTWARE, null); // needed for shadow glow on strokes
     }
 
     public void setBloom(float b) { bloom = b; invalidate(); }
@@ -35,7 +34,7 @@ public class FlowerView extends View {
         float d = getResources().getDisplayMetrics().density;
         java.util.List<float[]> l = new java.util.ArrayList<>();
         java.util.Random r = new java.util.Random(7);
-        float step = 150 * d;
+        float step = 300 * d; // half as many flowers; hardware-drawn, no blur (keeps the TV smooth)
         int i = 0;
         // top and bottom edges
         for (float x = 40 * d; x < w; x += step, i++) {
@@ -74,9 +73,8 @@ public class FlowerView extends View {
             stroke.setAlpha((int) (200 * local));
             stroke.setStrokeWidth(2f * d);
             glow.setColor(color);
-            glow.setAlpha((int) (90 * local));
+            glow.setAlpha((int) (45 * local));
             glow.setStrokeWidth(6f * d);
-            glow.setShadowLayer(10 * d, 0, 0, color);
 
             c.save();
             c.translate(s[0], s[1]);

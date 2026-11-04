@@ -521,7 +521,7 @@ public class MainActivity extends Activity {
             });
         }
 
-        addTile("PS5", null, false, "PS5", w, h, gap, new View.OnClickListener() {
+        addTile("PS5", getResources().getDrawable(R.drawable.ps_logo, getTheme()), true, null, w, h, gap, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 openHdmi1();
