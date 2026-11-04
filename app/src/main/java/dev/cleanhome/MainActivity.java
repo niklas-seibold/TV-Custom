@@ -27,6 +27,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -73,19 +74,13 @@ public class MainActivity extends Activity {
         scrim = findViewById(R.id.scrim);
         bgBtn = findViewById(R.id.bgBtn);
         bgIndex = getPreferences(MODE_PRIVATE).getInt("bg", 0);
-        bgBtn.setOnClickListener(v -> {
-            bgIndex = (bgIndex + 1) % BG_NAMES.length;
-            getPreferences(MODE_PRIVATE).edit().putInt("bg", bgIndex).apply();
-            if (night) {
-                night = false;
-                getPreferences(MODE_PRIVATE).edit().putBoolean("night", false).apply();
-                buildRow();
-                applyNight(false);
-        refreshMatches();
-            } else {
-                applyBackground();
-            }
-        });
+        bgBtn.setOnClickListener(v -> toggleBgStrip(false));
+        bgStrip = findViewById(R.id.bgStrip);
+        bgStripRow = findViewById(R.id.bgStripRow);
+        saver = findViewById(R.id.saver);
+        saverImg = findViewById(R.id.saverImg);
+        disco = findViewById(R.id.disco);
+        idleHandler.postDelayed(idleCheck, 30_000);
         try {
             girls = getPreferences(MODE_PRIVATE).getBoolean("girls", false);
         } catch (Exception ignored) {
@@ -160,11 +155,15 @@ public class MainActivity extends Activity {
     /** Private photo copied to the TV (never on GitHub): Android/data/dev.cleanhome/files/wallpaper.jpg */
     private void showPhoto() {
         File dir = getExternalFilesDir(null);
-        File f = dir == null ? null : new File(dir, "wallpaper.jpg");
+        List<File> all = photos();
+        String chosen = getPreferences(MODE_PRIVATE).getString("photo", null);
+        File f = null;
+        for (File x : all) if (x.getName().equals(chosen)) f = x;
+        if (f == null && !all.isEmpty()) f = all.get(0);
         if (f == null || !f.exists()) {
             bgImage.setVisibility(View.GONE);
             scrim.setVisibility(View.GONE);
-            Toast.makeText(this, "No photo yet — copy wallpaper.jpg to the TV first", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "No photos yet — copy some to the TV first", Toast.LENGTH_LONG).show();
             return;
         }
         showNature(f);
@@ -236,6 +235,273 @@ public class MainActivity extends Activity {
             return bo.toByteArray();
         } finally {
             c.disconnect();
+        }
+    }
+
+    // ---------------------------------------------------------------- background picker (inline)
+
+    private HorizontalScrollView bgStrip;
+    private LinearLayout bgStripRow;
+
+    /** Uploaded photos: any image in Android/data/dev.cleanhome/files/ */
+    private List<File> photos() {
+        List<File> out = new ArrayList<>();
+        File dir = getExternalFilesDir(null);
+        File[] fs = dir == null ? null : dir.listFiles();
+        if (fs != null) for (File f : fs) {
+            String n = f.getName().toLowerCase();
+            if (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".heic") || n.endsWith(".webp")) out.add(f);
+        }
+        Collections.sort(out, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        return out;
+    }
+
+    private void toggleBgStrip(boolean photoMode) {
+        if (bgStrip.getVisibility() == View.VISIBLE && !photoMode) {
+            closeBgStrip();
+            return;
+        }
+        bgStripRow.removeAllViews();
+        if (!photoMode) {
+            for (int i = 0; i < BG_NAMES.length; i++) {
+                final int idx = i;
+                Drawable preview = null;
+                if (i == NATURE) {
+                    File[] c = getCacheDir().listFiles();
+                    if (c != null) for (File f : c) if (f.getName().startsWith("nature-")) preview = thumb(f);
+                } else if (i == PHOTO) {
+                    List<File> ps = photos();
+                    if (!ps.isEmpty()) preview = thumb(ps.get(0));
+                }
+                if (preview == null) preview = getResources().getDrawable(BG_RES[i], getTheme());
+                String name = i == PHOTO ? "Photos (" + photos().size() + ") \u203A" : BG_NAMES[i];
+                addCard(name, preview, i == bgIndex, v -> {
+                    if (idx == PHOTO) { toggleBgStrip(true); return; }
+                    chooseBg(idx);
+                });
+            }
+        } else {
+            addCard("\u2039 Back", getResources().getDrawable(R.drawable.bg_gradient, getTheme()), false, v -> toggleBgStrip(false));
+            String chosen = getPreferences(MODE_PRIVATE).getString("photo", null);
+            List<File> ps = photos();
+            if (ps.isEmpty()) Toast.makeText(this, "No photos yet — copy some to the TV first", Toast.LENGTH_LONG).show();
+            for (int i = 0; i < ps.size(); i++) {
+                final File f = ps.get(i);
+                addCard("Photo " + (i + 1), thumb(f), f.getName().equals(chosen) && bgIndex == PHOTO, v -> {
+                    getPreferences(MODE_PRIVATE).edit().putString("photo", f.getName()).apply();
+                    chooseBg(PHOTO);
+                });
+            }
+        }
+        bgStrip.setVisibility(View.VISIBLE);
+        bgStrip.setAlpha(0f);
+        bgStrip.setTranslationY(-dp(12));
+        bgStrip.animate().alpha(1f).translationY(0).setDuration(180).start();
+        View first = bgStripRow.getChildAt(photoMode ? Math.min(1, bgStripRow.getChildCount() - 1) : Math.max(0, bgIndex));
+        if (first != null) ((ViewGroupHolder) first.getTag()).tile.requestFocus();
+    }
+
+    private void chooseBg(int idx) {
+        bgIndex = idx;
+        getPreferences(MODE_PRIVATE).edit().putInt("bg", idx).putBoolean("night", false).apply();
+        if (night) {
+            night = false;
+            buildRow();
+            applyNight(false);
+        } else {
+            applyBackground();
+        }
+        closeBgStrip();
+    }
+
+    private void closeBgStrip() {
+        bgStrip.setVisibility(View.GONE);
+        bgBtn.requestFocus();
+    }
+
+    private Drawable thumb(File f) {
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            o.inSampleSize = 1;
+            while (o.outWidth / (o.inSampleSize * 2) >= 320) o.inSampleSize *= 2;
+            o.inJustDecodeBounds = false;
+            Bitmap b = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            return b == null ? null : new android.graphics.drawable.BitmapDrawable(getResources(), b);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void addCard(String label, Drawable preview, boolean selected, View.OnClickListener click) {
+        int w = dp(150), h = dp(84);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_HORIZONTAL);
+        final FrameLayout card = new FrameLayout(this);
+        card.setBackgroundResource(R.drawable.tile_bg);
+        card.setForeground(getResources().getDrawable(R.drawable.tile_ring, getTheme()));
+        card.setClipToOutline(true);
+        card.setFocusable(true);
+        card.setClickable(true);
+        card.setOnClickListener(click);
+        ImageView iv = new ImageView(this);
+        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        iv.setImageDrawable(preview);
+        card.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+        final TextView t = new TextView(this);
+        t.setText(selected ? "\u2713 " + label : label);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(12);
+        t.setAlpha(0.7f);
+        t.setGravity(Gravity.CENTER);
+        card.setOnFocusChangeListener((v, has) -> {
+            v.animate().scaleX(has ? 1.08f : 1f).scaleY(has ? 1.08f : 1f).setDuration(120).start();
+            t.setAlpha(has ? 1f : 0.7f);
+        });
+        col.addView(card, new LinearLayout.LayoutParams(w, h));
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(w, -2);
+        tl.topMargin = dp(8);
+        col.addView(t, tl);
+        col.setTag(new ViewGroupHolder(card));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.rightMargin = dp(14);
+        bgStripRow.addView(col, lp);
+    }
+
+    // ---------------------------------------------------------------- screensaver
+
+    private View saver, disco;
+    private ImageView saverImg;
+    private long lastInput = System.currentTimeMillis();
+    private final android.os.Handler idleHandler = new android.os.Handler();
+    private List<File> saverFiles = new ArrayList<>();
+    private int saverPos = 0;
+    private static final long SAVER_AFTER = 4 * 60_000L;
+
+    private final Runnable idleCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (resumed && saver.getVisibility() != View.VISIBLE && System.currentTimeMillis() - lastInput > SAVER_AFTER) startSaver();
+            idleHandler.postDelayed(this, 30_000);
+        }
+    };
+
+    private final Runnable saverNext = new Runnable() {
+        @Override
+        public void run() {
+            if (saver.getVisibility() != View.VISIBLE) return;
+            showSaverImage();
+            idleHandler.postDelayed(this, 15_000);
+        }
+    };
+
+    private void startSaver() {
+        saverFiles = photos();
+        File[] c = getCacheDir().listFiles();
+        if (c != null) for (File f : c) if (f.getName().startsWith("nature-")) saverFiles.add(f);
+        saver.setAlpha(0f);
+        saver.setVisibility(View.VISIBLE);
+        saver.animate().alpha(1f).setDuration(1500).start();
+        saverPos = 0;
+        idleHandler.post(saverNext);
+    }
+
+    private void showSaverImage() {
+        if (saverFiles.isEmpty()) {
+            saverImg.setImageResource(BG_RES[(saverPos++) % 4]);
+        } else {
+            File f = saverFiles.get((saverPos++) % saverFiles.size());
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            o.inSampleSize = 1;
+            while (o.outWidth / (o.inSampleSize * 2) >= 1920) o.inSampleSize *= 2;
+            o.inJustDecodeBounds = false;
+            Bitmap b = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            if (b != null) saverImg.setImageBitmap(b);
+        }
+        saverImg.setAlpha(0f);
+        saverImg.setScaleX(1f);
+        saverImg.setScaleY(1f);
+        saverImg.animate().alpha(1f).setDuration(1500).start();
+        saverImg.animate().scaleX(1.1f).scaleY(1.1f).setDuration(16_000).start();
+    }
+
+    private void stopSaver() {
+        idleHandler.removeCallbacks(saverNext);
+        saver.setVisibility(View.GONE);
+        saverImg.setImageDrawable(null);
+    }
+
+    // ---------------------------------------------------------------- secret code: up up down down left right left right
+
+    private static final int[] SECRET = {KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT};
+    private final int[] lastKeys = new int[SECRET.length];
+    private boolean discoOn = false;
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        lastInput = System.currentTimeMillis();
+        if (saver.getVisibility() == View.VISIBLE) {
+            if (e.getAction() == KeyEvent.ACTION_UP) stopSaver();
+            return true; // first press only wakes the screen
+        }
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+            System.arraycopy(lastKeys, 1, lastKeys, 0, lastKeys.length - 1);
+            lastKeys[lastKeys.length - 1] = e.getKeyCode();
+            if (java.util.Arrays.equals(lastKeys, SECRET) && !discoOn) {
+                java.util.Arrays.fill(lastKeys, 0);
+                startDisco();
+            }
+        }
+        return super.dispatchKeyEvent(e); // navigation is never blocked
+    }
+
+    private void startDisco() {
+        discoOn = true;
+        stopNightAnims();
+        disco.setVisibility(View.VISIBLE);
+        gameOn.setVisibility(View.VISIBLE);
+        gameOn.setText("DISCO MODE");
+        gameOn.setTypeface(Typeface.create("sans-serif-black", Typeface.ITALIC));
+        gameOn.setScaleX(1f);
+        gameOn.setScaleY(1f);
+        ValueAnimator hue = ValueAnimator.ofFloat(0f, 360f * 6);
+        hue.setDuration(12_000);
+        hue.setInterpolator(new android.view.animation.LinearInterpolator());
+        hue.addUpdateListener(a -> {
+            float hh = ((float) a.getAnimatedValue()) % 360f;
+            int c = Color.HSVToColor(new float[]{hh, 1f, 1f});
+            int strobe = ((int) ((float) a.getAnimatedValue() / 45f)) % 2 == 0 ? 0x66 : 0x22;
+            disco.setBackgroundColor((strobe << 24) | (c & 0xFFFFFF));
+            gameOn.setTextColor(Color.HSVToColor(new float[]{(hh + 180) % 360, 1f, 1f}));
+            gameOn.setShadowLayer(40, 0, 0, c);
+            gameOn.setRotation((float) Math.sin(Math.toRadians(hh * 4)) * 6);
+        });
+        hue.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                discoOn = false;
+                disco.setVisibility(View.GONE);
+                gameOn.setRotation(0);
+                for (int i = 0; i < row.getChildCount(); i++) row.getChildAt(i).setRotation(0);
+                applyNight(false);
+            }
+        });
+        hue.start();
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View c = row.getChildAt(i);
+            c.animate().rotationBy(720).setStartDelay(i * 120L).setDuration(1400)
+                    .setInterpolator(new OvershootInterpolator(1.2f)).start();
+            ObjectAnimator jump = ObjectAnimator.ofFloat(c, "translationY", 0, -dp(28), 0);
+            jump.setDuration(420);
+            jump.setStartDelay(1500 + i * 60L);
+            jump.setRepeatCount(20);
+            jump.start();
         }
     }
 
@@ -404,6 +670,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        if (saver != null) stopSaver();
         stopNightAnims();
         super.onPause();
     }
@@ -414,6 +681,8 @@ public class MainActivity extends Activity {
         resumed = true;
         buildRow(); // rebuild so apps installed/updated meanwhile show their artwork
         applyNight(false);
+        refreshMatches();
+        lastInput = System.currentTimeMillis();
         if (!setupBusy && setupDialog == null && !SelfSetup.guardEnabled(this)) offerSetup();
     }
 
@@ -466,6 +735,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (bgStrip != null && bgStrip.getVisibility() == View.VISIBLE) {
+            closeBgStrip();
+            return;
+        }
         // This is home. Nothing behind it.
     }
 
