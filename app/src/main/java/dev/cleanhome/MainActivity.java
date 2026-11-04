@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private static final String AIRSCREEN = "com.ionitech.airscreen";
 
     static volatile boolean resumed = false;
+    private String lastHdmiError;
     private LinearLayout row;
     private int focusIndex = 0;
     private float density;
@@ -596,9 +597,18 @@ public class MainActivity extends Activity {
         if (pick != null) {
             Intent v = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(pick.getId()))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            // Amazon's own HDMI player (needs com.amazon.tv.permission.TUNE_INPUT).
+            Intent player = new Intent(v).setClassName("com.amazon.tv.inputpreference.service",
+                    "com.amazon.tv.inputpreference.player.PassthroughPlayerActivity");
+            Guard.graceFor(5000);
+            try {
+                startActivity(player);
+                return;
+            } catch (Exception e) {
+                lastHdmiError = e.getMessage();
+            }
             pickLiveTv(v);
             Guard.allowTarget(this, v);
-            Guard.graceFor(5000);
             if (safeStart(v, null)) return;
         }
         showInputDiagnostics(all);
@@ -625,7 +635,9 @@ public class MainActivity extends Activity {
 
     /** Shown only if HDMI switching fails: a photo of this tells us how to fix it. */
     private void showInputDiagnostics(List<TvInputInfo> all) {
-        StringBuilder sb = new StringBuilder("Couldn't switch to HDMI 1 automatically.\n\nInputs found:\n");
+        StringBuilder sb = new StringBuilder("Couldn't switch to HDMI 1 automatically.\n");
+        if (lastHdmiError != null) sb.append("\nPlayer: ").append(lastHdmiError).append('\n');
+        sb.append("\nInputs found:\n");
         if (all.isEmpty()) sb.append("(none)\n");
         for (TvInputInfo i : all) {
             sb.append("• ").append(i.loadLabel(this)).append("  type=").append(i.getType())
